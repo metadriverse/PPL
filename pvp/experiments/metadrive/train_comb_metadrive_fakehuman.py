@@ -18,14 +18,14 @@ FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--exp_name", default="pvp_metadrive_fakehuman", type=str, help="The name for this batch of experiments."
+        "--exp_name", default="ppl_metadrive", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="Drive0723", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="PPLDrive1126", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0410".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_1126".format("PPL", args.bc_loss_weight)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
         experiment_batch_name = "BCLossOnly_"
     seed = args.seed
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 150
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
