@@ -74,16 +74,10 @@ class PrefReplayBuffer(ReplayBuffer):
         action_space: spaces.Space,
         device: Union[th.device, str] = "cpu",
         n_envs: int = 1,
-        optimize_memory_usage: bool = False,
-        handle_timeout_termination: bool = True,
-        discard_reward=False,
-        discard_takeover_start=False,
-        takeover_stop_td=False,
-        future_steps=5,
+        handle_timeout_termination: bool = True
     ):
         # Skip the init of ReplayBuffer and only run the BaseBuffer.__init__
         super(ReplayBuffer, self).__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
-        self.future_steps = future_steps
         # PZH: Hack
         # assert isinstance(self.obs_shape, dict), "DictReplayBuffer must be used with Dict obs space only"
         self._fake_dict_obs = False
@@ -104,17 +98,17 @@ class PrefReplayBuffer(ReplayBuffer):
             mem_available = psutil.virtual_memory().available
 
         self.pos_observations = {
-            key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
+            key: np.zeros((self.buffer_size, 1) + _obs_shape, dtype=self.observation_space[key].dtype)
             for key, _obs_shape in self.obs_shape.items()
         }
         
         self.neg_observations = {
-            key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
+            key: np.zeros((self.buffer_size, 1) + _obs_shape, dtype=self.observation_space[key].dtype)
             for key, _obs_shape in self.obs_shape.items()
         }
 
-        self.pos_actions = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
-        self.neg_actions = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.pos_actions = np.zeros((self.buffer_size, 1, self.action_dim), dtype=action_space.dtype)
+        self.neg_actions = np.zeros((self.buffer_size, 1, self.action_dim), dtype=action_space.dtype)
 
         # Handle timeouts termination properly if needed
         # see https://github.com/DLR-RM/stable-baselines3/issues/284
@@ -127,28 +121,18 @@ class PrefReplayBuffer(ReplayBuffer):
         neg_traj: List,
     ) -> None:
         l = min(len(pos_traj), len(neg_traj))
-        for step in range(self.future_steps):
-            if step >= l:
-                break
-            else:
-                obs, action = pos_traj[step]["obs"], pos_traj[step]["action"]
-                if self._fake_dict_obs:
-                    obs = {"default": obs}
-                for key in self.pos_observations.keys():
-                    self.pos_observations[key][self.pos][step] = np.array(obs[key]).copy()
-                
-                self.pos_actions[self.pos][step] = np.array(action).copy().reshape(self.pos_actions[self.pos][step].shape)
-        for step in range(self.future_steps):
-            if step >= l:
-                break
-            else:
-                obs, action = neg_traj[step]["obs"], neg_traj[step]["action"]
-                if self._fake_dict_obs:
-                    obs = {"default": obs}
-                for key in self.neg_observations.keys():
-                    self.neg_observations[key][self.pos][step] = np.array(obs[key]).copy()
-                
-                self.neg_actions[self.pos][step] = np.array(action).copy().reshape(self.neg_actions[self.pos][step].shape)
+        obs, action = pos_traj[0]["obs"], pos_traj[0]["action"]
+        if self._fake_dict_obs:
+            obs = {"default": obs}
+        for key in self.pos_observations.keys():
+            self.pos_observations[key][self.pos][0] = np.array(obs[key]).copy()
+        self.pos_actions[self.pos][0] = np.array(action).copy().reshape(self.pos_actions[self.pos][0].shape)
+        obs, action = neg_traj[0]["obs"], neg_traj[0]["action"]
+        if self._fake_dict_obs:
+            obs = {"default": obs}
+        for key in self.neg_observations.keys():
+            self.neg_observations[key][self.pos][0] = np.array(obs[key]).copy()
+        self.neg_actions[self.pos][0] = np.array(action).copy().reshape(self.neg_actions[self.pos][0].shape)
         
         self.pos += 1
         if self.pos == self.buffer_size:

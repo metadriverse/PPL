@@ -23,12 +23,12 @@ from pvp.sb3.td3.td3 import TD3
 from pvp.sb3.haco.haco_buffer import PrefReplayBuffer
 
 
-def biased_bce_with_logits(adv1, adv2, y, bias=1.0, cbias = 0):
+def biased_bce_with_logits(adv1, adv2, y, bias=0.5):
     # Apply the log-sum-exp trick.
     # y = 1 if we prefer x2 to x1
     # We need to implement the numerical stability trick.
 
-    logit21 = adv2 - bias * adv1 - cbias
+    logit21 = adv2 - bias * adv1
     logit12 = adv1 - bias * adv2
     max21 = torch.clamp(-logit21, min=0, max=None)
     max12 = torch.clamp(-logit12, min=0, max=None)
@@ -64,10 +64,9 @@ class PVPTD3(TD3):
                 assert v in ["True", "False"]
                 v = v == "True"
                 self.extra_config[k] = v
-        for k in ["agent_data_ratio", "bc_loss_weight", "dpo_loss_weight", "alpha", "bias"]:
+        for k in ["agent_data_ratio", "bc_loss_weight", "beta"]:
             if k in kwargs:
                 self.extra_config[k] = kwargs.pop(k)
-
         self.q_value_bound = q_value_bound
         self.use_balance_sample = use_balance_sample
         super(PVPTD3, self).__init__(*args, **kwargs)
@@ -354,18 +353,16 @@ class PVPTD3(TD3):
 class PPL(PVPTD3):
     def __init__(self, *args, **kwargs):
         super(PPL, self).__init__(*args, **kwargs)
-        self.imagreplay_buffer = PrefReplayBuffer(
+        self.preference_buffer = PrefReplayBuffer(
                 self.buffer_size,
                 self.observation_space,
                 self.action_space,
                 self.device,
                 n_envs=self.n_envs,
-                optimize_memory_usage=self.optimize_memory_usage,
-                future_steps=1,
                 **self.replay_buffer_kwargs,
         )
     def _excluded_save_params(self) -> List[str]:
-        return super()._excluded_save_params() + ["imagreplay_buffer", "human_data_buffer"]
+        return super()._excluded_save_params() + ["preference_buffer", "human_data_buffer"]
     
     def train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Switch to train mode (this affects batch norm / dropout)
@@ -382,7 +379,7 @@ class PPL(PVPTD3):
             if self.human_data_buffer.pos == 0:
                 break
             replay_data = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
-            preference_data = self.imagreplay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+            preference_data = self.preference_buffer.sample(int(batch_size), env=self._vec_normalize_env)
             
             new_action = self.actor(replay_data.observations)
             bc_loss = F.mse_loss(replay_data.actions_behavior, new_action, reduction="none").mean()
@@ -399,18 +396,18 @@ class PPL(PVPTD3):
                 log_prob = -((mean - target_action) ** 2).sum(dim = -1)
                 return log_prob
             
-            alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
+            beta = self.extra_config["beta"]
             log_prob_pos = get_log_prob(pos_obs, pos_action)
             log_prob_neg = get_log_prob(neg_obs, neg_action)
-            adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
+            adv_pos, adv_neg = beta * log_prob_pos, beta * log_prob_neg
             label = torch.ones_like(adv_pos)
-            dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
+            dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float())
             
-            bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
+            bc_loss_weight = self.extra_config["bc_loss_weight"]
             if self.extra_config["only_bc_loss"]:
-                bc_loss_weight, dpo_loss_weight = 1.0, 0.0
-            
-            loss = bc_loss_weight * bc_loss + dpo_loss_weight * dpo_loss
+                loss = bc_loss
+            else:
+                loss = bc_loss_weight * bc_loss + dpo_loss
             
             self.actor.optimizer.zero_grad()
             loss.backward()
@@ -422,7 +419,7 @@ class PPL(PVPTD3):
             stat_recorder["loss"].append(loss.item() if loss is not None else float('nan'))
 
         self._n_updates += gradient_steps
-        self.logger.record("train/predicted_steps", self.imagreplay_buffer.pos)
+        self.logger.record("train/predicted_steps", self.preference_buffer.pos)
         self.logger.record("train/human_involved_steps", self.human_data_buffer.pos)
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         for key, values in stat_recorder.items():

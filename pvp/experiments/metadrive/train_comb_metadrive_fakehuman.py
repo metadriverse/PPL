@@ -26,22 +26,19 @@ if __name__ == '__main__':
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="PPLDrive1126", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
-    parser.add_argument("--future_steps_predict", default=20, type=int)
-    parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=3, type=int)
-    parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
-    parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
-    parser.add_argument("--alpha", default=0.1, type=float)
-    parser.add_argument("--bias", default=0.5, type=float)
+    parser.add_argument("--num_predicted_steps", default=20, type=int)   # The predictor anticipates the next H steps from the current state
+    parser.add_argument("--preference_horizon", default=3, type=int)   # Add the first L predicted steps to the preference buffer
+    parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")   # Debug mode
+    parser.add_argument("--bc_loss_weight", type=float, default=1.0)
+    parser.add_argument("--beta", default=0.1, type=float)
     
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     experiment_batch_name = "PPL"
-    if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
+    if args.only_bc_loss=="True":
         experiment_batch_name = "PPL_BCLossOnly"
     seed = args.seed
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -66,27 +63,21 @@ if __name__ == '__main__':
 
         # Environment config
         env_config=dict(
-            use_render=False,
-            future_steps_predict=args.future_steps_predict,
-            update_future_freq=args.update_future_freq,
-            future_steps_preference=args.future_steps_preference,
+            num_predicted_steps=args.num_predicted_steps,
+            preference_horizon=args.preference_horizon,
         ),
 
         # Algorithm config
         algo=dict(
             only_bc_loss=args.only_bc_loss,
             bc_loss_weight=args.bc_loss_weight,
-            dpo_loss_weight = args.dpo_loss_weight,
-            alpha = args.alpha,
-            bias = args.bias,
+            beta = args.beta,
             add_bc_loss="True" if args.bc_loss_weight > 0.0 else "False",
             use_balance_sample=True,
             agent_data_ratio=1.0,
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
-            replay_buffer_kwargs=dict(
-                discard_reward=True,  # We run in reward-free manner!
-            ),
+            replay_buffer_kwargs=dict(),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
             learning_rate=1e-4,
@@ -131,20 +122,15 @@ if __name__ == '__main__':
     # ===== Also build the eval env =====
     def _make_eval_env():
         eval_env_config = dict(
-            use_render=False,
-            manual_control=False,
             start_seed=1000,
         )
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        from pvp.experiments.metadrive.human_in_the_loop_env import DrivingEnv
         from pvp.sb3.common.monitor import Monitor
-        eval_env = HumanInTheLoopEnv(config=eval_env_config)
+        eval_env = DrivingEnv(config=eval_env_config)
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    if config["env_config"]["use_render"]:
-        eval_env, eval_freq = None, -1
-    else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 150
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 150
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint

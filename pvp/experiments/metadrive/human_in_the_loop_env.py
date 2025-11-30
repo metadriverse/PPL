@@ -22,7 +22,8 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     "cos_similarity": False,  # If True, the takeover cost will be the cos sim between a_h and a_n. Useless in PVP.
 
     # Set up the control device. Default to use keyboard with the pop-up interface.
-    "manual_control": True,
+    "use_render": False,
+    "manual_control": False,
     "agent_policy": TakeoverPolicyWithoutBrake,
     "controller": "keyboard",  # Selected from [keyboard, xbox, steering_wheel].
     "only_takeover_start_cost": False,  # If True, only return a cost when takeover starts. Useless in PVP.
@@ -37,7 +38,7 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
 }
 
 
-class HumanInTheLoopEnv(BasePredictionEnv):
+class DrivingEnv(BasePredictionEnv):
     """
     Human-in-the-loop Env Wrapper for the Safety Env in MetaDrive.
     Add code for computing takeover cost and add information to the interface.
@@ -53,20 +54,20 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     start_time = time.time()
 
     def default_config(self):
-        config = super(HumanInTheLoopEnv, self).default_config()
+        config = super(DrivingEnv, self).default_config()
         config.update(HUMAN_IN_THE_LOOP_ENV_CONFIG, allow_add_new_key=True)
         return config
 
     def reset(self, *args, **kwargs):
         self.takeover = False
         self.agent_action = None
-        obs, info = super(HumanInTheLoopEnv, self).reset(*args, **kwargs)
+        obs, info = super(DrivingEnv, self).reset(*args, **kwargs)
         # The training code is for older version of gym, so we discard the additional info from the reset.
         return obs
 
     def _get_step_return(self, actions, engine_info):
         """Compute takeover cost here."""
-        o, r, tm, tc, engine_info = super(HumanInTheLoopEnv, self)._get_step_return(actions, engine_info)
+        o, r, tm, tc, engine_info = super(DrivingEnv, self)._get_step_return(actions, engine_info)
         d = tm or tc
 
         shared_control_policy = self.engine.get_policy(self.agent.id)
@@ -99,13 +100,13 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     def step(self, actions):
         """Add additional information to the interface."""
         self.agent_action = copy.copy(actions)
-        ret = super(HumanInTheLoopEnv, self).step(actions)
+        ret = super(DrivingEnv, self).step(actions)
         while self.in_pause:
             self.engine.taskMgr.step()
 
         self.takeover_recorder.append(self.takeover)
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
-            super(HumanInTheLoopEnv, self).render(
+            super(DrivingEnv, self).render(
                 text={
                     "Total Cost": round(self.total_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
@@ -130,7 +131,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
 
     def setup_engine(self):
         """Introduce additional key 'e' to the interface."""
-        super(HumanInTheLoopEnv, self).setup_engine()
+        super(DrivingEnv, self).setup_engine()
         self.engine.accept("e", self.stop)
 
     def get_takeover_cost(self, info):
@@ -148,7 +149,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         return 1 - cos_dist
 
 if __name__ == "__main__":
-    env = HumanInTheLoopEnv({
+    env = DrivingEnv({
         "manual_control": True,
         "use_render": True,
     })

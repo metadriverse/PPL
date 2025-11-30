@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
+from pvp.experiments.metadrive.egpo.fakehuman_env import ExpertTakeoverEnv
 from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -22,10 +22,10 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=2000, type=int)
+    parser.add_argument("--save_freq", default=150, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="Drive0723", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="PPLDrive1126", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
@@ -35,18 +35,18 @@ if __name__ == '__main__':
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--policy_delay", default=1, type=int)
-    parser.add_argument("--future_steps_predict", default=20, type=int)
+    parser.add_argument("--num_predicted_steps", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
     parser.add_argument("--expert_noise", default=0.4, type=float)
-    parser.add_argument("--simple_batch", default="False", type=str)
+    parser.add_argument("--simple_batch", default="True", type=str)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}".format("PVP", args.bc_loss_weight)
+    experiment_batch_name = "PVP"
     if args.only_bc_loss=="True":
         experiment_batch_name = "BCLossOnlyS"
     seed = args.seed
@@ -80,10 +80,9 @@ if __name__ == '__main__':
             # controller=control_device,
             # window_size=(1600, 1100),
 
-            # FakeHumanEnv config:
+            # ExpertTakeoverEnv config:
             use_render=False,
-            future_steps_predict=args.future_steps_predict,
-            update_future_freq=args.update_future_freq,
+            num_predicted_steps=args.num_predicted_steps,
             future_steps_preference=args.future_steps_preference,
             expert_noise=args.expert_noise,
         ),
@@ -142,7 +141,7 @@ if __name__ == '__main__':
         )
         
     # ===== Setup the training environment =====
-    train_env = FakeHumanEnv(config=config["env_config"], )
+    train_env = ExpertTakeoverEnv(config=config["env_config"], )
     train_env = Monitor(env=train_env, filename=str(trial_dir))
     # Store all shared control data to the files.
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
@@ -157,16 +156,16 @@ if __name__ == '__main__':
             start_seed=1000,
             horizon=1500,
         )
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        from pvp.experiments.metadrive.human_in_the_loop_env import DrivingEnv
         from pvp.sb3.common.monitor import Monitor
-        eval_env = HumanInTheLoopEnv(config=eval_env_config)
+        eval_env = DrivingEnv(config=eval_env_config)
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 2000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
