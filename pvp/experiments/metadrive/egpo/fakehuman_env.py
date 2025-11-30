@@ -1,4 +1,3 @@
-#goal: add fake (imag) pos samples to neg trajs. see performance of algos
 import copy
 import math
 import pathlib
@@ -80,7 +79,7 @@ def load():
 _expert = get_expert()
 
 
-class FakeHumanEnv(HumanInTheLoopEnv):
+class ExpertTakeoverEnv(HumanInTheLoopEnv):
     last_takeover = None
     last_obs = None
     expert = None
@@ -88,7 +87,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     drawn_points = []
     
     def __init__(self, config):
-        super(FakeHumanEnv, self).__init__(config)
+        super(ExpertTakeoverEnv, self).__init__(config)
         if self.config["use_discrete"]:
             self._num_bins = 13
             self._grid = np.linspace(-1, 1, self._num_bins)
@@ -99,7 +98,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if self.config["use_discrete"]:
             return gym.spaces.Discrete(self._num_bins ** 2)
         else:
-            return super(FakeHumanEnv, self).action_space
+            return super(ExpertTakeoverEnv, self).action_space
 
     # def _preprocess_actions(self, actions: Union[np.ndarray, Dict[AnyStr, np.ndarray], int]) -> Union[np.ndarray, Dict[AnyStr, np.ndarray], int]:
     #     if self.config["use_discrete"]:
@@ -110,7 +109,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
     def default_config(self):
         """Revert to use the RL policy (so no takeover signal will be issued from the human)"""
-        config = super(FakeHumanEnv, self).default_config()
+        config = super(ExpertTakeoverEnv, self).default_config()
         config.update(
             {
                 "use_discrete": False,
@@ -255,7 +254,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return o, info
 
 if __name__ == "__main__":
-    env = FakeHumanEnv(dict(use_render=True, num_scenarios=1, traffic_density=0))
+    env = ExpertTakeoverEnv(dict(use_render=True, num_scenarios=1, traffic_density=0))
     env.reset()
     ss = 0
     while True:

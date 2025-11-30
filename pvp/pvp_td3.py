@@ -351,9 +351,9 @@ class PVPTD3(TD3):
 
 
 
-class COMB(PVPTD3):
+class PPL(PVPTD3):
     def __init__(self, *args, **kwargs):
-        super(COMB, self).__init__(*args, **kwargs)
+        super(PPL, self).__init__(*args, **kwargs)
         self.imagreplay_buffer = PrefReplayBuffer(
                 self.buffer_size,
                 self.observation_space,

@@ -3,8 +3,8 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
-from pvp.pvp_td3 import COMB
+from pvp.experiments.metadrive.egpo.fakehuman_env import ExpertTakeoverEnv
+from pvp.pvp_td3 import PPL
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
 from pvp.sb3.common.vec_env import SubprocVecEnv
@@ -21,21 +21,17 @@ if __name__ == '__main__':
         "--exp_name", default="ppl_metadrive", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
-    parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=2000, type=int)
+    parser.add_argument("--save_freq", default=150, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="PPLDrive1126", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
-    parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
-    parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
     parser.add_argument("--alpha", default=0.1, type=float)
@@ -44,12 +40,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
-    #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_1126".format("PPL", args.bc_loss_weight)
+    experiment_batch_name = "PPL"
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_"
+        experiment_batch_name = "PPL_BCLossOnly"
     seed = args.seed
-    #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
     print("Trial name is set to: ", trial_name)
 
@@ -59,7 +53,7 @@ if __name__ == '__main__':
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 
-    log_dir = args.log_dir
+    log_dir = FOLDER_PATH.parent.parent
     experiment_dir = Path(log_dir) / Path("runs") / experiment_batch_name
 
     trial_dir = experiment_dir / trial_name
@@ -72,27 +66,16 @@ if __name__ == '__main__':
 
         # Environment config
         env_config=dict(
-
-            # Original real human exp env config:
-            # use_render=True,  # Open the interface
-            # manual_control=True,  # Allow receiving control signal from external device
-            # controller=control_device,
-            # window_size=(1600, 1100),
-
-            # FakeHumanEnv config:
             use_render=False,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
-            expert_noise=args.expert_noise,
         ),
 
         # Algorithm config
         algo=dict(
-            # intervention_start_stop_td=args.intervention_start_stop_td,
-            adaptive_batch_size=args.adaptive_batch_size,
-            bc_loss_weight=args.bc_loss_weight,
             only_bc_loss=args.only_bc_loss,
+            bc_loss_weight=args.bc_loss_weight,
             dpo_loss_weight = args.dpo_loss_weight,
             alpha = args.alpha,
             bias = args.bias,
@@ -110,7 +93,7 @@ if __name__ == '__main__':
             q_value_bound=1,
             optimize_memory_usage=True,
             buffer_size=50_000,  # We only conduct experiment less than 50K steps
-            learning_starts=args.learning_starts,  # The number of steps before
+            learning_starts=10,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
             gamma=0.99,
@@ -132,7 +115,6 @@ if __name__ == '__main__':
     )
     if args.toy_env:
         config["env_config"].update(
-            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
             num_scenarios=1,
             traffic_density=0.0,
             map="COT",
@@ -140,9 +122,8 @@ if __name__ == '__main__':
         )
         
     # ===== Setup the training environment =====
-    train_env = FakeHumanEnv(config=config["env_config"], )
+    train_env = ExpertTakeoverEnv(config=config["env_config"], )
     train_env = Monitor(env=train_env, filename=str(trial_dir))
-    # Store all shared control data to the files.
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
@@ -150,10 +131,9 @@ if __name__ == '__main__':
     # ===== Also build the eval env =====
     def _make_eval_env():
         eval_env_config = dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
+            use_render=False,
+            manual_control=False,
             start_seed=1000,
-            horizon=1500,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
@@ -184,12 +164,11 @@ if __name__ == '__main__':
     callbacks = CallbackList(callbacks)
 
     # ===== Setup the training algorithm =====
-    model = COMB(**config["algo"])
+    model = PPL(**config["algo"])
     if args.ckpt:
         ckpt = Path(args.ckpt)
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
-
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
@@ -197,16 +176,14 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=20_000,
         callback=callbacks,
         reset_num_timesteps=True,
-
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
-
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
