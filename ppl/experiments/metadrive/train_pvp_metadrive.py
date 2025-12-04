@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument("--num_predicted_steps", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
-    parser.add_argument("--expert_noise", default=0.4, type=float)
+    parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--simple_batch", default="True", type=str)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     
