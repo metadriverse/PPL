@@ -73,3 +73,15 @@ You can also set the mode --only_bc_loss=True in our PPL method to verify that t
 python ppl/experiments/metadrive/train_ppl_metadrive.py \
 --only_bc_loss=True
 ```
+
+## Reference
+
+**Predictive Preference Learning from Human Interventions (NeurIPS 2025 Spotlight)**:
+```plain
+@article{cai2025predictive,
+  title={Predictive Preference Learning from Human Interventions},
+  author={Cai, Haoyuan and Peng, Zhenghao and Zhou, Bolei},
+  journal={Advances in Neural Information Processing Systems},
+  year={2025}
+}   
+```
